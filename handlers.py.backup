@@ -1,0 +1,505 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Handler functions for the Telegram bot commands and callbacks
+"""
+
+import logging
+import datetime
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ContextTypes
+from user_data import (
+    get_user_data, update_user_data, save_user_data,
+    get_favorite_game, get_registration_date, get_games_played
+)
+from games import play_even_odd, play_higher_lower
+from crypto_payments import create_deposit_invoice, get_user_balance
+from constants import RESULTS_CHANNEL_ID
+
+logger = logging.getLogger(__name__)
+
+# Main menu keyboard
+def get_main_keyboard():
+    keyboard = [
+        [
+            InlineKeyboardButton("👤Профиль", callback_data="profile"),
+            InlineKeyboardButton("🎲ИГРАТЬ", callback_data="play")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# Play menu keyboard
+def get_play_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("💰 Мой баланс", callback_data="balance")],
+        [InlineKeyboardButton("💸 Сделать ставку", callback_data="bet")],
+        [InlineKeyboardButton("💵 Пополнить баланс", callback_data="deposit")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="back_to_main")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# Game selection keyboard
+def get_game_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("🎲 Чет/нечет", callback_data="game_even_odd")],
+        [InlineKeyboardButton("📊 Больше/меньше", callback_data="game_higher_lower")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="play")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# Even/Odd game keyboard
+def get_even_odd_keyboard(bet_amount=100):
+    keyboard = [
+        [
+            InlineKeyboardButton(f"Чет ({bet_amount} TON)", callback_data=f"even_odd_even_{bet_amount}"),
+            InlineKeyboardButton(f"Нечет ({bet_amount} TON)", callback_data=f"even_odd_odd_{bet_amount}")
+        ],
+        [
+            InlineKeyboardButton("50 TON", callback_data="even_odd_bet_50"),
+            InlineKeyboardButton("100 TON", callback_data="even_odd_bet_100"),
+            InlineKeyboardButton("200 TON", callback_data="even_odd_bet_200")
+        ],
+        [InlineKeyboardButton("◀️ Назад", callback_data="bet")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# Higher/Lower game keyboard
+def get_higher_lower_keyboard(bet_amount=100):
+    keyboard = [
+        [
+            InlineKeyboardButton(f"Больше 3 ({bet_amount} TON)", callback_data=f"higher_lower_higher_{bet_amount}"),
+            InlineKeyboardButton(f"Меньше 4 ({bet_amount} TON)", callback_data=f"higher_lower_lower_{bet_amount}")
+        ],
+        [
+            InlineKeyboardButton("50 TON", callback_data="higher_lower_bet_50"),
+            InlineKeyboardButton("100 TON", callback_data="higher_lower_bet_100"),
+            InlineKeyboardButton("200 TON", callback_data="higher_lower_bet_200")
+        ],
+        [InlineKeyboardButton("◀️ Назад", callback_data="bet")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the /start command."""
+    user = update.effective_user
+    user_id = user.id
+    
+    # Initialize user data if first time
+    user_data = get_user_data(user_id)
+    if not user_data:
+        user_data = {
+            "user_id": user_id,
+            "username": user.username or "Anonymous",
+            "registration_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "games_played": 0,
+            "favorite_game": None,
+            "balance": 0,
+            "even_odd_games": 0,
+            "higher_lower_games": 0,
+            "last_activity": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        update_user_data(user_id, user_data)
+        save_user_data()
+    
+    await update.effective_message.reply_text(
+        "Приветствуем вас в нашем захватывающем казино! 🎰💥 Погрузитесь в мир азарта и удачи прямо сейчас!",
+        reply_markup=get_main_keyboard()
+    )
+
+async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle profile button click."""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    games_played = get_games_played(user_id)
+    registration_date = get_registration_date(user_id)
+    favorite_game = get_favorite_game(user_id)
+    
+    games_text = f"🎮 Количество сыгранных игр: {games_played}" if games_played > 0 else "🎮 Вы еще не сыграли ни одной игры!"
+    favorite_text = f"❤️ Любимый режим: {favorite_game}" if favorite_game else "❤️ У вас еще нет любимого режима игры."
+    
+    profile_text = (
+        "👤 Ваш профиль:\n\n"
+        f"{games_text}\n\n"
+        f"📅 Дата регистрации: {registration_date}\n\n"
+        f"{favorite_text}"
+    )
+    
+    await query.edit_message_text(
+        text=profile_text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_main")]
+        ])
+    )
+
+async def play_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle play button click."""
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        text="🎮 Выберите действие:",
+        reply_markup=get_play_keyboard()
+    )
+
+async def show_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show user balance."""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    balance = get_user_balance(user_id)
+    
+    await query.edit_message_text(
+        text=f"💰 Ваш текущий баланс: {balance} TON",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("💵 Пополнить баланс", callback_data="deposit")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="play")]
+        ])
+    )
+
+def get_deposit_keyboard():
+    """Get deposit amount selection keyboard"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💰 10 TON", callback_data="deposit_amount_10")],
+        [InlineKeyboardButton("💰 50 TON", callback_data="deposit_amount_50")],
+        [InlineKeyboardButton("💰 100 TON", callback_data="deposit_amount_100")],
+        [InlineKeyboardButton("💰 500 TON", callback_data="deposit_amount_500")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="play")]
+    ])
+
+async def deposit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle deposit button click."""
+    query = update.callback_query
+    await query.answer()
+    
+    # Проверяем, выбрана ли сумма
+    if query.data.startswith("deposit_amount_"):
+        amount = int(query.data.split("_")[-1])
+        user_id = query.from_user.id
+        invoice_url = await create_deposit_invoice(user_id, amount)
+        
+        # В режиме демонстрации пользователь уже получил средства в функции create_deposit_invoice
+        # Показываем сообщение об успешном пополнении
+        balance = get_user_balance(user_id)
+        
+        await query.edit_message_text(
+            text=f"✅ Демонстрационный режим: Ваш баланс был пополнен на {amount} TON!\n\n💰 Текущий баланс: {balance} TON",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎮 Играть", callback_data="bet")],
+                [InlineKeyboardButton("◀️ Назад в меню", callback_data="play")]
+            ])
+        )
+        
+        # Обычный код для настоящей оплаты выглядел бы так (сейчас не используется):
+        """
+        # Проверяем, получили ли мы действительный URL или сообщение об ошибке
+        if invoice_url.startswith("http"):
+            # У нас есть действительный URL
+            await query.edit_message_text(
+                text=f"💵 Пополнение баланса на {amount} TON:\n\nНажмите кнопку ниже для оплаты через CryptoBot.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(f"💰 Оплатить {amount} TON", url=invoice_url)],
+                    [InlineKeyboardButton("◀️ Выбрать другую сумму", callback_data="deposit")],
+                    [InlineKeyboardButton("◀️ Назад в меню", callback_data="play")]
+                ])
+            )
+        else:
+            # Получили сообщение об ошибке вместо URL
+            await query.edit_message_text(
+                text=f"⚠️ {invoice_url}\n\nПожалуйста, попробуйте позже или обратитесь к администратору.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("◀️ Назад", callback_data="play")]
+                ])
+            )
+        """
+    else:
+        # Показываем выбор суммы пополнения
+        await query.edit_message_text(
+            text="💵 Пополнить баланс:\n\nВыберите сумму пополнения:",
+            reply_markup=get_deposit_keyboard()
+        )
+
+async def place_bet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle bet button click and show game options."""
+    query = update.callback_query
+    await query.answer()
+    
+    logger.info(f"Пользователь {query.from_user.id} выбрал 'Играть', показываю выбор игр")
+    
+    try:
+        await query.edit_message_text(
+            text="🎲 Выберите режим игры:",
+            reply_markup=get_game_keyboard()
+        )
+        logger.info("Экран выбора игры успешно отображен")
+    except Exception as e:
+        logger.error(f"Ошибка при отображении экрана выбора игры: {e}")
+
+async def game_selection_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle game selection."""
+    query = update.callback_query
+    await query.answer()
+    
+    logger.info(f"Выбран режим игры: {query.data}")
+    
+    # Получаем тип игры из callback_data
+    # game_even_odd -> ["game", "even_odd"]
+    parts = query.data.split("_", 1)  # Разделяем только по первому символу '_'
+    
+    if len(parts) != 2:
+        logger.error(f"Неверный формат callback_data: {query.data}")
+        return
+    
+    prefix, game_type = parts
+    
+    if game_type == "even_odd":
+        logger.info("Открываю игру Чет/нечет")
+        try:
+            await query.edit_message_text(
+                text="🎲 Игра «Чет/нечет»\n\nПравила: Выберите чет или нечет. Если выпадет выбранный вами вариант - вы выиграете в 2 раза больше ставки!",
+                reply_markup=get_even_odd_keyboard()
+            )
+            logger.info("Экран игры Чет/нечет успешно отображен")
+        except Exception as e:
+            logger.error(f"Ошибка при показе экрана игры Чет/нечет: {e}")
+    
+    elif game_type == "higher_lower":
+        logger.info("Открываю игру Больше/меньше")
+        try:
+            await query.edit_message_text(
+                text="📊 Игра «Больше/меньше»\n\nПравила: Выберите, будет ли число больше 3 или меньше 4. Если угадаете - выиграете в 2 раза больше ставки!",
+                reply_markup=get_higher_lower_keyboard()
+            )
+            logger.info("Экран игры Больше/меньше успешно отображен")
+        except Exception as e:
+            logger.error(f"Ошибка при показе экрана игры Больше/меньше: {e}")
+    
+    else:
+        logger.error(f"Неизвестный тип игры: {game_type}")
+
+async def even_odd_game_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle even/odd game."""
+    query = update.callback_query
+    await query.answer()
+    
+    parts = query.data.split("_")
+    action = parts[2]
+    
+    # Handle bet amount change
+    if action == "bet":
+        bet_amount = int(parts[3])
+        await query.edit_message_text(
+            text=f"🎲 Игра «Чет/нечет» (ставка: {bet_amount} TON)\n\nПравила: Выберите чет или нечет. Если выпадет выбранный вами вариант - вы выиграете в 2 раза больше ставки!",
+            reply_markup=get_even_odd_keyboard(bet_amount)
+        )
+        return
+    
+    # Handle actual bet
+    user_id = query.from_user.id
+    bet_choice = action  # "even" or "odd"
+    bet_amount = int(parts[3])
+    
+    # Check if user has enough balance
+    balance = get_user_balance(user_id)
+    if balance < bet_amount:
+        await query.edit_message_text(
+            text=f"⚠️ Недостаточно средств на счете. Ваш баланс: {balance} TON",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💵 Пополнить баланс", callback_data="deposit")],
+                [InlineKeyboardButton("◀️ Назад", callback_data="bet")]
+            ])
+        )
+        return
+    
+    # Play the game
+    result = await play_even_odd(update, context, user_id, bet_choice, bet_amount)
+    
+    # Update user data
+    user_data = get_user_data(user_id)
+    user_data["games_played"] += 1
+    user_data["even_odd_games"] += 1
+    
+    # Set as favorite game if this is the most played game
+    if user_data.get("even_odd_games", 0) > user_data.get("higher_lower_games", 0):
+        user_data["favorite_game"] = "Чет/нечет"
+    
+    update_user_data(user_id, user_data)
+    save_user_data()
+    
+    # Send results to the user and ask if they want to play again
+    await query.edit_message_text(
+        text=result["message"],
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎲 Играть снова", callback_data="game_even_odd")],
+            [InlineKeyboardButton("◀️ Вернуться в меню", callback_data="play")]
+        ])
+    )
+    
+    # Post results to channel if configured
+    if RESULTS_CHANNEL_ID:
+        try:
+            # Отправляем сообщение в канал
+            channel_message = await context.bot.send_message(
+                chat_id=RESULTS_CHANNEL_ID,
+                text=result["channel_message"]
+            )
+            
+            # Создаем ссылку на канал для пользователя
+            # Преобразуем RESULTS_CHANNEL_ID в формат для ссылки
+            channel_id_for_link = str(RESULTS_CHANNEL_ID).replace("-100", "")
+            
+            # Отправляем пользователю кнопку для перехода на канал
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="🎮 Хотите увидеть свой результат в игровом канале?",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(
+                        "👀 Перейти к результату в канале", 
+                        url=f"https://t.me/c/{channel_id_for_link}/{channel_message.message_id}"
+                    )]
+                ])
+            )
+            logger.info(f"Sent channel link to user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to send message to results channel: {e}")
+
+async def higher_lower_game_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle higher/lower game."""
+    query = update.callback_query
+    await query.answer()
+    
+    parts = query.data.split("_")
+    action = parts[2]
+    
+    # Handle bet amount change
+    if action == "bet":
+        bet_amount = int(parts[3])
+        await query.edit_message_text(
+            text=f"📊 Игра «Больше/меньше» (ставка: {bet_amount} TON)\n\nПравила: Выберите, будет ли число больше 3 или меньше 4. Если угадаете - выиграете в 2 раза больше ставки!",
+            reply_markup=get_higher_lower_keyboard(bet_amount)
+        )
+        return
+    
+    # Handle actual bet
+    user_id = query.from_user.id
+    bet_choice = action  # "higher" or "lower"
+    bet_amount = int(parts[3])
+    
+    # Check if user has enough balance
+    balance = get_user_balance(user_id)
+    if balance < bet_amount:
+        await query.edit_message_text(
+            text=f"⚠️ Недостаточно средств на счете. Ваш баланс: {balance} TON",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💵 Пополнить баланс", callback_data="deposit")],
+                [InlineKeyboardButton("◀️ Назад", callback_data="bet")]
+            ])
+        )
+        return
+    
+    # Play the game
+    result = await play_higher_lower(update, context, user_id, bet_choice, bet_amount)
+    
+    # Update user data
+    user_data = get_user_data(user_id)
+    user_data["games_played"] += 1
+    user_data["higher_lower_games"] += 1
+    
+    # Set as favorite game if this is the most played game
+    if user_data.get("higher_lower_games", 0) > user_data.get("even_odd_games", 0):
+        user_data["favorite_game"] = "Больше/меньше"
+    
+    update_user_data(user_id, user_data)
+    save_user_data()
+    
+    # Send results to the user and ask if they want to play again
+    await query.edit_message_text(
+        text=result["message"],
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎲 Играть снова", callback_data="game_higher_lower")],
+            [InlineKeyboardButton("◀️ Вернуться в меню", callback_data="play")]
+        ])
+    )
+    
+    # Post results to channel if configured
+    if RESULTS_CHANNEL_ID:
+        try:
+            # Отправляем сообщение в канал
+            channel_message = await context.bot.send_message(
+                chat_id=RESULTS_CHANNEL_ID,
+                text=result["channel_message"]
+            )
+            
+            # Создаем ссылку на канал для пользователя
+            # Преобразуем RESULTS_CHANNEL_ID в формат для ссылки
+            channel_id_for_link = str(RESULTS_CHANNEL_ID).replace("-100", "")
+            
+            # Отправляем пользователю кнопку для перехода на канал
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="🎮 Хотите увидеть свой результат в игровом канале?",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(
+                        "👀 Перейти к результату в канале", 
+                        url=f"https://t.me/c/{channel_id_for_link}/{channel_message.message_id}"
+                    )]
+                ])
+            )
+            logger.info(f"Sent channel link to user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to send message to results channel: {e}")
+
+async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle cancel button click or unknown text messages."""
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(
+            text="Действие отменено. Возвращаемся в главное меню.",
+            reply_markup=get_main_keyboard()
+        )
+    else:
+        await update.message.reply_text(
+            "Не понимаю эту команду. Используйте кнопки для навигации.",
+            reply_markup=get_main_keyboard()
+        )
+
+async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle bot being added to or removed from a chat"""
+    my_chat_member = update.my_chat_member
+    chat = my_chat_member.chat
+    new_status = my_chat_member.new_chat_member.status
+    old_status = my_chat_member.old_chat_member.status
+    
+    # Бот был добавлен в канал или группу
+    if old_status in ["left", "kicked"] and new_status in ["member", "administrator"]:
+        if chat.type in ["channel", "supergroup", "group"]:
+            logger.info(f"Бот был добавлен в {chat.type} {chat.title} (ID: {chat.id})")
+            
+            # Отправка приветственного сообщения в канал или группу
+            welcome_text = (
+                f"🎰 <b>Казино-бот успешно подключен к {chat.title}!</b> 🎰\n\n"
+                f"✅ Теперь результаты игр будут публиковаться здесь.\n\n"
+                f"📱 Чтобы начать играть, перейдите в личку с ботом."
+            )
+            
+            try:
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=welcome_text,
+                    parse_mode="HTML"
+                )
+                logger.info(f"Отправлено приветственное сообщение в {chat.type} {chat.title}")
+                
+                # Если это канал для результатов, сохраняем его ID (опционально)
+                if RESULTS_CHANNEL_ID is None or str(chat.id) == RESULTS_CHANNEL_ID:
+                    logger.info(f"Канал {chat.id} установлен как канал для результатов")
+            except Exception as e:
+                logger.error(f"Ошибка отправки приветственного сообщения: {e}")
+    
+    # Бот был удален из канала или группы
+    elif new_status in ["left", "kicked"] and old_status in ["member", "administrator"]:
+        logger.info(f"Бот был удален из {chat.type} {chat.title} (ID: {chat.id})")

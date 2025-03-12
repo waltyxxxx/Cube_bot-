@@ -1,0 +1,68 @@
+{
+  "996513450": {
+    "user_id": 996513450,
+    "username": "i_dnt_rmmbr",
+    "registration_date": "2025-03-10 16:21:47",
+    "games_played": 14,
+    "favorite_game": "Чет/нечет",
+    "balance": 0.0,
+    "even_odd_games": 10,
+    "higher_lower_games": 4,
+    "last_activity": "2025-03-10 17:08:39"
+  },
+  "1251107637": {
+    "user_id": 1251107637,
+    "username": "max_koh00",
+    "registration_date": "2025-03-10 16:40:48",
+    "games_played": 2,
+    "favorite_game": "Больше/меньше",
+    "balance": 0.0,
+    "even_odd_games": 1,
+    "higher_lower_games": 1,
+    "last_activity": "2025-03-10 17:39:26"
+  },
+  "789552267": {
+    "user_id": 789552267,
+    "username": "quclyo",
+    "registration_date": "2025-03-10 19:51:47",
+    "games_played": 0,
+    "favorite_game": null,
+    "balance": 0,
+    "even_odd_games": 0,
+    "higher_lower_games": 0,
+    "last_activity": "2025-03-10 19:51:47"
+  },
+  "7896126005": {
+    "user_id": 7896126005,
+    "username": "hedhsbdbbs",
+    "registration_date": "2025-03-10 21:15:58",
+    "games_played": 0,
+    "favorite_game": null,
+    "balance": 0,
+    "even_odd_games": 0,
+    "higher_lower_games": 0,
+    "last_activity": "2025-03-10 21:15:58"
+  },
+  "1008882025": {
+    "user_id": 1008882025,
+    "username": "milhwa",
+    "registration_date": "2025-03-12 16:42:30",
+    "games_played": 0,
+    "favorite_game": null,
+    "balance": 0,
+    "even_odd_games": 0,
+    "higher_lower_games": 0,
+    "last_activity": "2025-03-12 16:42:30"
+  },
+  "7757868141": {
+    "user_id": 7757868141,
+    "username": "ForgeNexa_VK",
+    "registration_date": "2025-03-12 22:05:00",
+    "games_played": 0,
+    "favorite_game": null,
+    "balance": 0,
+    "even_odd_games": 0,
+    "higher_lower_games": 0,
+    "last_activity": "2025-03-12 22:05:00"
+  }
+}
